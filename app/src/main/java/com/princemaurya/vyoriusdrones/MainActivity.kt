@@ -2,7 +2,6 @@ package com.princemaurya.vyoriusdrones
 
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -19,7 +18,6 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -49,15 +47,142 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        videoLayout = findViewById(R.id.videoLayout)
-        rtspUrlEditText = findViewById(R.id.rtspUrlEditText)
-        playButton = findViewById(R.id.playButton)
-        recordButton = findViewById(R.id.recordButton)
-        pipButton = findViewById(R.id.pipButton)
-        buttonContainer = findViewById(R.id.buttonContainer)
+        try {
+            videoLayout = findViewById(R.id.videoLayout)
+            rtspUrlEditText = findViewById(R.id.rtspUrlEditText)
+            playButton = findViewById(R.id.playButton)
+            recordButton = findViewById(R.id.recordButton)
+            pipButton = findViewById(R.id.pipButton)
+            buttonContainer = findViewById(R.id.buttonContainer)
 
-        setupUI()
-        checkPermissions()
+            setupUI()
+            checkPermissions()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error initializing UI: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun setupUI() {
+        try {
+            playButton.setOnClickListener {
+                val url = rtspUrlEditText.text.toString()
+                if (url.isNotEmpty()) {
+                    playStream(url)
+                } else {
+                    Toast.makeText(this, "Please enter RTSP URL", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            recordButton.setOnClickListener {
+                if (isRecording) {
+                    stopRecording()
+                } else {
+                    startRecording()
+                }
+            }
+
+            pipButton.setOnClickListener {
+                enterPipMode()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error setting up UI: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun checkPermissions() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                when {
+                    ContextCompat.checkSelfPermission(
+                        this,
+                        android.Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED -> {
+                        setupMediaPlayer()
+                    }
+                    else -> {
+                        requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+            } else {
+                setupMediaPlayer()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error checking permissions: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun setupMediaPlayer() {
+        try {
+            val options = ArrayList<String>()
+            options.add("--aout=opensles")
+            options.add("--audio-time-stretch")
+            options.add("--avcodec-codec=h264")
+            options.add("--file-logging")
+            options.add("--logfile=vlc-log.txt")
+
+            libVLC = LibVLC(this, options)
+            mediaPlayer = MediaPlayer(libVLC)
+            mediaPlayer.attachViews(videoLayout, null, false, false)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error setting up media player: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun playStream(url: String) {
+        try {
+            var cleanUrl = url.trim()
+            if (!cleanUrl.startsWith("rtsp://")) {
+                cleanUrl = "rtsp://$cleanUrl"
+            }
+            
+            if (!cleanUrl.contains("/stream") && !cleanUrl.endsWith("/")) {
+                cleanUrl = "$cleanUrl/stream"
+            }
+
+            val media = Media(libVLC, cleanUrl)
+            media.addOption(":network-caching=1000")
+            media.addOption(":rtsp-tcp")
+            media.addOption(":rtsp-frame-buffer-size=500000")
+            
+            mediaPlayer.media = media
+            mediaPlayer.play()
+            
+            Toast.makeText(this, "Connecting to stream...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error playing stream: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun startRecording() {
+        try {
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "recording_$timestamp.mp4"
+            recordingFile = File(getExternalFilesDir(null), fileName)
+            
+            mediaPlayer.record(recordingFile?.absolutePath)
+            isRecording = true
+            recordButton.text = "Stop Recording"
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error starting recording: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopRecording() {
+        try {
+            mediaPlayer.record(null)
+            isRecording = false
+            recordButton.text = "Record"
+            Toast.makeText(this, "Recording saved: ${recordingFile?.name}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error stopping recording: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
     }
 
     override fun onUserLeaveHint() {
@@ -73,112 +198,42 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updateUIForPipMode(isInPipMode: Boolean) {
-        if (isInPipMode) {
-            rtspUrlEditText.visibility = View.GONE
-            playButton.visibility = View.GONE
-            buttonContainer.visibility = View.GONE
-        } else {
-            rtspUrlEditText.visibility = View.VISIBLE
-            playButton.visibility = View.VISIBLE
-            buttonContainer.visibility = View.VISIBLE
-        }
-    }
-
-    private fun setupUI() {
-        playButton.setOnClickListener {
-            val rtspUrl = rtspUrlEditText.text.toString()
-            if (rtspUrl.isNotBlank()) {
-                mediaPlayer.stop() // Stop any previous media
-                val media = Media(libVLC, Uri.parse(rtspUrl))
-                media.setHWDecoderEnabled(true, false)
-                media.addOption(":network-caching=150") // Optional: lower latency
-                mediaPlayer.media = media
-                media.release()
-                mediaPlayer.play()
+        try {
+            if (isInPipMode) {
+                rtspUrlEditText.visibility = View.GONE
+                playButton.visibility = View.GONE
+                buttonContainer.visibility = View.GONE
             } else {
-                Toast.makeText(this, "Please enter a valid RTSP URL", Toast.LENGTH_SHORT).show()
+                rtspUrlEditText.visibility = View.VISIBLE
+                playButton.visibility = View.VISIBLE
+                buttonContainer.visibility = View.VISIBLE
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-
-        recordButton.setOnClickListener {
-            if (isRecording) {
-                stopRecording()
-            } else {
-                startRecording()
-            }
-        }
-
-        pipButton.setOnClickListener {
-            enterPipMode()
-        }
-    }
-
-    private fun checkPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            when {
-                ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED -> {
-                    setupMediaPlayer()
-                }
-                else -> {
-                    requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                }
-            }
-        } else {
-            setupMediaPlayer()
-        }
-    }
-
-    private fun setupMediaPlayer() {
-        val options = ArrayList<String>()
-        options.add("--aout=opensles")
-        options.add("--audio-time-stretch")
-        options.add("--avcodec-codec=h264")
-        options.add("--file-logging")
-        options.add("--logfile=vlc-log.txt")
-
-        libVLC = LibVLC(this, options)
-        mediaPlayer = MediaPlayer(libVLC)
-        mediaPlayer.attachViews(videoLayout, null, false, false)
-    }
-
-    private fun playStream(url: String) {
-        val media = Media(libVLC, url)
-        mediaPlayer.media = media
-        mediaPlayer.play()
-    }
-
-    private fun startRecording() {
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val fileName = "recording_$timestamp.mp4"
-        recordingFile = File(getExternalFilesDir(null), fileName)
-        
-        mediaPlayer.record(recordingFile?.absolutePath)
-        isRecording = true
-        recordButton.text = "Stop Recording"
-    }
-
-    private fun stopRecording() {
-        mediaPlayer.record(null)
-        isRecording = false
-        recordButton.text = "Record"
-        Toast.makeText(this, "Recording saved: ${recordingFile?.name}", Toast.LENGTH_SHORT).show()
     }
 
     private fun enterPipMode() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val params = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-                .build()
-            enterPictureInPictureMode(params)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error entering PIP mode: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mediaPlayer.release()
-        libVLC.release()
+        try {
+            mediaPlayer.release()
+            libVLC.release()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
