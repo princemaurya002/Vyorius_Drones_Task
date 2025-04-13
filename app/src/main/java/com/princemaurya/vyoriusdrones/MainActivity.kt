@@ -4,6 +4,7 @@ import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -142,27 +143,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     private fun playStream(url: String) {
         try {
             var cleanUrl = url.trim()
-            if (!cleanUrl.startsWith("rtsp://")) {
+
+            cleanUrl = cleanUrl.replace("file://", "", ignoreCase = true)
+
+            cleanUrl = cleanUrl.replace("//+", "/", ignoreCase = true)
+
+            if (!cleanUrl.startsWith("rtsp://", ignoreCase = true)) {
                 cleanUrl = "rtsp://$cleanUrl"
             }
-            
-            if (!cleanUrl.contains("/stream") && !cleanUrl.endsWith("/")) {
-                cleanUrl = "$cleanUrl/stream"
-            }
 
-            val media = Media(libVLC, cleanUrl)
-            media.addOption(":network-caching=1000")
+            cleanUrl = cleanUrl.trimEnd('/')
+            cleanUrl = cleanUrl.trim()
+            android.util.Log.d("RTSP_PLAY", "Attempting to play stream with URL: $cleanUrl")
+            val uri = Uri.parse(cleanUrl)
+            android.util.Log.d("RTSP_PLAY", "Parsed URI: $uri")
+            val media = Media(libVLC, uri)
+
+            media.addOption(":network-caching=500")
             media.addOption(":rtsp-tcp")
-            media.addOption(":rtsp-frame-buffer-size=500000")
-            
+            media.addOption(":rtsp-timeout=10000")
             mediaPlayer.media = media
             mediaPlayer.play()
-            
+
             Toast.makeText(this, "Connecting to stream...", Toast.LENGTH_SHORT).show()
+
         } catch (e: Exception) {
+            android.util.Log.e("RTSP_PLAY", "Error playing stream with URL: $url", e)
             Toast.makeText(this, "Error playing stream: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
@@ -177,8 +187,15 @@ class MainActivity : ComponentActivity() {
 
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val fileName = "snapshot_$timestamp.jpg"
-            val snapshotFile = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), fileName)
+            val picturesDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+            
+            // Ensure directory exists
+            if (picturesDir != null && !picturesDir.exists()) {
+                picturesDir.mkdirs()
+            }
 
+            val snapshotFile = File(picturesDir, fileName)
+            
             // Create a bitmap from the video view
             val bitmap = Bitmap.createBitmap(
                 videoLayout.width,
@@ -187,14 +204,15 @@ class MainActivity : ComponentActivity() {
             )
             val canvas = Canvas(bitmap)
             videoLayout.draw(canvas)
-
+            
             // Save the bitmap
             FileOutputStream(snapshotFile).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
             }
-
+            
             Toast.makeText(this, "Snapshot saved: ${snapshotFile.name}", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
+            android.util.Log.e("SNAPSHOT", "Error taking snapshot: ${e.message}", e)
             Toast.makeText(this, "Error taking snapshot: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
@@ -202,15 +220,35 @@ class MainActivity : ComponentActivity() {
 
     private fun startRecording() {
         try {
+            if (!mediaPlayer.isPlaying) {
+                Toast.makeText(this, "No active stream to record", Toast.LENGTH_SHORT).show()
+                return
+            }
+
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val fileName = "recording_$timestamp.mp4"
-            recordingFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), fileName)
+            val moviesDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES)
             
+            // Ensure directory exists
+            if (moviesDir != null && !moviesDir.exists()) {
+                moviesDir.mkdirs()
+            }
+
+            recordingFile = File(moviesDir, fileName)
+            
+            // Configure recording
+            val media = mediaPlayer.media
+            media?.addOption(":sout=#file{dst=${recordingFile?.absolutePath}}")
+            media?.addOption(":sout-keep")
+            
+            // Start recording
             mediaPlayer.record(recordingFile?.absolutePath)
             isRecording = true
             recordButton.text = "Stop Recording"
-            Toast.makeText(this, "Recording started", Toast.LENGTH_SHORT).show()
+            
+            Toast.makeText(this, "Recording started: ${recordingFile?.name}", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
+            android.util.Log.e("RECORDING", "Error starting recording: ${e.message}", e)
             Toast.makeText(this, "Error starting recording: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
@@ -218,11 +256,22 @@ class MainActivity : ComponentActivity() {
 
     private fun stopRecording() {
         try {
+            if (!isRecording) {
+                return
+            }
+
+            // Stop recording
             mediaPlayer.record(null)
             isRecording = false
             recordButton.text = "Record"
+            
+            // Reset media options
+            val media = mediaPlayer.media
+            media?.addOption(":sout=#")
+            
             Toast.makeText(this, "Recording saved: ${recordingFile?.name}", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
+            android.util.Log.e("RECORDING", "Error stopping recording: ${e.message}", e)
             Toast.makeText(this, "Error stopping recording: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
