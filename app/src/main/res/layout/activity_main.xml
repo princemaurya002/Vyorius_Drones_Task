@@ -11,6 +11,7 @@
         android:id="@+id/rtspUrlEditText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_margin="16dp"
         android:hint="Enter RTSP URL"
         android:textColor="#FFE500"
         android:textColorHint="@color/black"
@@ -32,9 +33,7 @@
         android:id="@+id/videoLayout"
         android:layout_width="0dp"
         android:layout_height="0dp"
-
-        android:layout_marginTop="50dp"
-
+        android:layout_margin="16dp"
         app:layout_constraintBottom_toTopOf="@+id/buttonContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

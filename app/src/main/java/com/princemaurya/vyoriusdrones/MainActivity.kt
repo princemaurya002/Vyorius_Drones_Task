@@ -6,8 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +31,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var playButton: Button
     private lateinit var recordButton: Button
     private lateinit var pipButton: Button
+    private lateinit var buttonContainer: LinearLayout
     private var isRecording = false
     private var recordingFile: File? = null
 
@@ -51,9 +54,34 @@ class MainActivity : ComponentActivity() {
         playButton = findViewById(R.id.playButton)
         recordButton = findViewById(R.id.recordButton)
         pipButton = findViewById(R.id.pipButton)
+        buttonContainer = findViewById(R.id.buttonContainer)
 
         setupUI()
         checkPermissions()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            enterPipMode()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode)
+        updateUIForPipMode(isInPictureInPictureMode)
+    }
+
+    private fun updateUIForPipMode(isInPipMode: Boolean) {
+        if (isInPipMode) {
+            rtspUrlEditText.visibility = View.GONE
+            playButton.visibility = View.GONE
+            buttonContainer.visibility = View.GONE
+        } else {
+            rtspUrlEditText.visibility = View.VISIBLE
+            playButton.visibility = View.VISIBLE
+            buttonContainer.visibility = View.VISIBLE
+        }
     }
 
     private fun setupUI() {
