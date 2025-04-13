@@ -13,4 +13,5 @@
     <color name="button_text">#FFFFFF</color>
     <color name="edittext_background">#FFFFFF</color>
     <color name="edittext_hint">#9E9E9E</color>
+    <color name="record_button_background">#1565C0</color>
 </resources>

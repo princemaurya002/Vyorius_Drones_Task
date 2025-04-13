@@ -2,8 +2,11 @@ package com.princemaurya.vyoriusdrones
 
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.util.Rational
 import android.view.View
 import android.widget.Button
@@ -18,6 +21,7 @@ import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -29,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var playButton: Button
     private lateinit var recordButton: Button
     private lateinit var pipButton: Button
+    private lateinit var snapshotButton: Button
     private lateinit var buttonContainer: LinearLayout
     private var isRecording = false
     private var recordingFile: File? = null
@@ -53,6 +58,7 @@ class MainActivity : ComponentActivity() {
             playButton = findViewById(R.id.playButton)
             recordButton = findViewById(R.id.recordButton)
             pipButton = findViewById(R.id.pipButton)
+            snapshotButton = findViewById(R.id.snapshotButton)
             buttonContainer = findViewById(R.id.buttonContainer)
 
             setupUI()
@@ -80,6 +86,10 @@ class MainActivity : ComponentActivity() {
                 } else {
                     startRecording()
                 }
+            }
+
+            snapshotButton.setOnClickListener {
+                takeSnapshot()
             }
 
             pipButton.setOnClickListener {
@@ -158,15 +168,48 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun takeSnapshot() {
+        try {
+            if (!mediaPlayer.isPlaying) {
+                Toast.makeText(this, "No active stream to capture", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "snapshot_$timestamp.jpg"
+            val snapshotFile = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), fileName)
+
+            // Create a bitmap from the video view
+            val bitmap = Bitmap.createBitmap(
+                videoLayout.width,
+                videoLayout.height,
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = Canvas(bitmap)
+            videoLayout.draw(canvas)
+
+            // Save the bitmap
+            FileOutputStream(snapshotFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+            }
+
+            Toast.makeText(this, "Snapshot saved: ${snapshotFile.name}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error taking snapshot: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
+        }
+    }
+
     private fun startRecording() {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val fileName = "recording_$timestamp.mp4"
-            recordingFile = File(getExternalFilesDir(null), fileName)
+            recordingFile = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), fileName)
             
             mediaPlayer.record(recordingFile?.absolutePath)
             isRecording = true
             recordButton.text = "Stop Recording"
+            Toast.makeText(this, "Recording started", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Error starting recording: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
